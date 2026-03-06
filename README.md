@@ -17,11 +17,7 @@ Este proyecto implementa conceptos clave de **DevSecOps**:
 ✅ **Supply Chain**: SBOM + firma digital  
 ✅ **Compliance**: Auditoría y trazabilidad
 
-```c
-char *get_next_line(int fd);
-```
-
-Este proyecto toma esa implementación y la somete a un pipeline exhaustivo de **testing, análisis de seguridad y scanning de vulnerabilidades** para garantizar código robusto y seguro.
+Este proceso de **testing, análisis de seguridad y scanning de vulnerabilidades** es necesario para garantizar código robusto y seguro.
 
 ## 🛠️ Estructura del Proyecto
 
@@ -85,7 +81,7 @@ gnl-secure-ci/
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                   Git Push / PR                      │
+│                   Git Push / PR                     │
 └────────────────┬────────────────────────────────────┘
                  │
          ┌───────▼────────┐
@@ -109,12 +105,12 @@ gnl-secure-ci/
     🔐 SIGNING & VERIFICATION
     📦 ARTIFACT UPLOAD
                 │
-         ┌──────▼──────┐
+         ┌──────▼───────┐
          │   SUCCESS    │
-         │  ✓ app      │
-         │  ✓ app.asc  │
-         │  ✓ sbom.json│
-         └─────────────┘
+         │  ✓ app       │
+         │  ✓ app.asc   │
+         │  ✓ sbom.json │
+         └──────────────┘
 ```
 ---
 
@@ -146,7 +142,7 @@ valgrind --leak-check=full ./app tests/inputs/test1.txt
 ✓ Detección de memory leaks  
 ✓ Buffer overflows  
 ✓ Use-after-free bugs  
-⚠️ Crítico en C (sin garbage collector)
+⚠️ Crítico en C
 
 ---
 
