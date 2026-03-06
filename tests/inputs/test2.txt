@@ -1,0 +1,4 @@
+First line
+
+This is a very very long line that exceeds the BUFFER_SIZE to test if get_next_line handles long lines correctly.
+End

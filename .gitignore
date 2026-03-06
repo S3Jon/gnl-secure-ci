@@ -1,0 +1,29 @@
+# Binarios compilados
+app
+app_san
+*.o
+*.a
+*.so
+
+# Artefactos de testing
+output.txt
+output2.txt
+*.gcda
+*.gcno
+coverage.info
+
+# Logs y temporales
+*.log
+.DS_Store
+
+# GPG keys (nunca subir keys privadas)
+cosign.key
+cosign.pub
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store

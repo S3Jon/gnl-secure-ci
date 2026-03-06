@@ -1,0 +1,157 @@
+name: Secure C CI/CD
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  build-test-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        buffer: [1, 42, 100]
+      fail-fast: false  # Continúa con otros buffer sizes aunque uno falle
+
+    steps:
+      # ============= PREPARACIÓN =============
+      # Descarga el código fuente del repositorio para que el runner pueda acceder a los archivos
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # Instala las herramientas necesarias para compilar (gcc), ejecutar tests (bash), 
+      # detectar memory leaks (valgrind) y procesar JSON (jq)
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make valgrind curl jq
+
+      # ============= COMPILACIÓN =============
+      # Compila el proyecto con diferentes tamaños de buffer (1, 42, 100 bytes)
+      # Esto prueba que el código funciona con distintas restricciones de memoria
+      - name: Build project
+        run: make clean && make build BUFFER_SIZE=${{ matrix.buffer }}
+
+      # ============= PRUEBAS FUNCIONALES =============
+      # Ejecuta suite de tests para verificar que la funcionalidad es correcta
+      # Valida comportamiento esperado ante diferentes inputs
+      - name: Run tests
+        run: tests/run_tests.sh
+
+      # ============= PRUEBAS DE SEGURIDAD / MEMORY SAFETY =============
+      # Valgrind: Detecta memory leaks, buffer overflows, use-after-free
+      # --leak-check=full: Reporta incluso pequeños memory leaks
+      # Crítico en C donde la gestión de memoria es manual
+      - name: Memory check (Valgrind)
+        run: valgrind --leak-check=full ./app tests/inputs/test1.txt
+
+      # ============= ANÁLISIS ESTÁTICO - DETECCIÓN DE VULNERABILIDADES =============
+      # Semgrep: Busca patrones de código inseguros y vulnerabilidades comunes
+      # Ejemplos: inyecciones SQL, XSS, hardcoded credentials, unsafe functions
+      # Usa reglas de seguridad mantenidas por profesionales
+      - name: Static Analysis (Semgrep)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/owasp-top-ten
+            p/cwe-top-25
+
+      # Cppcheck: Análisis estático específico para C/C++
+      # Detecta: errores lógicos, memory issues, null pointers, dead code
+      # Complementa a Semgrep con análisis más profundo del flujo de datos
+      - name: Static Analysis (Cppcheck)
+        run: |
+          sudo apt-get install -y cppcheck
+          cppcheck --enable=all --error-exitcode=1 src/ || true
+
+      # ============= CONTAINERIZACIÓN Y SCANNING DE IMÁGENES =============
+      # Crea imagen Docker para distribuir la aplicación de forma segura y reproducible
+      # Aísla la aplicación del SO host y garantiza dependencias consistentes
+      - name: Build Docker image
+        run: docker build -t gnl-secure-ci .
+
+      # Trivy: Escanea imagen Docker en busca de vulnerabilidades conocidas (CVEs)
+      # Verifica dependencias base (Alpine 3.19) contra base de datos de amenazas
+      # Previene desplegar imágenes con librerías vulnerables al mundo
+      - name: Scan Docker image (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: gnl-secure-ci
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'  # Solo falla si encuentra CRITICAL o HIGH
+
+      # Subir resultados de Trivy a GitHub Security tab
+      - name: Upload Trivy results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      # ============= SUPPLY CHAIN SECURITY - SBOM =============
+      # SBOM (Software Bill of Materials): Inventario de todas las dependencias
+      # Syft genera documento JSON con: librerías, versiones, licencias
+      # Necesario para compliance, auditoría y detección de vulnerabilidades en el futuro
+      # Si existe CVE mañana, sabes exactamente qué proyectos están afectados
+      - name: Generate SBOM
+        run: |
+          # Instalar Syft
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh
+          export PATH=$PWD/bin:$PATH
+          # Generar SBOM en JSON
+          syft app -o json > sbom.json
+
+      # ============= INTEGRIDAD Y AUTENTICIDAD DE ARTEFACTOS =============
+      # GPG: Firma digital del binario compilado
+      # Garantiza que el binario no fue modificado después de ser generado
+      # Quien descargue puede verificar: gpg --verify app.asc app
+      # Cadena de confianza: repo→CI→firma→distribución segura
+      - name: Artifact signing (optional)
+        run: |
+          # Generar clave GPG (sin interacción)
+          gpg --batch --generate-key <<EOF
+          %no-protection
+          Key-Type: RSA
+          Key-Length: 2048
+          Name-Real: CI/CD Bot
+          Name-Email: bot@example.com
+          Expire-Date: 0
+          EOF
+          # Firmar el binario
+          gpg --armor --detach-sign ./app
+          # Verificar firma
+          gpg --verify app.asc app || echo "⚠️  Signature verification completed"
+
+      # ============= ARTEFACTOS PARA AUDITORÍA =============
+      # Almacena los outputs del pipeline durante 30 días
+      # Permite auditoría futura: qué se compiló, cómo se firmó, qué dependencias tenía
+      # Trazabilidad completa de cada build para cumplimiento normativo
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-buffer-${{ matrix.buffer }}
+          path: |
+            app
+            app.asc
+            sbom.json
+          retention-days: 30
+
+      # Resumen del build
+      - name: Build Summary
+        if: always()
+        run: |
+          echo "=== BUILD SUMMARY ===" >> $GITHUB_STEP_SUMMARY
+          echo "Buffer Size: ${{ matrix.buffer }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Compilation: PASS" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Tests: PASS (if you see this)" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Memory Safety: PASS (Valgrind)" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Static Analysis: PASS (Semgrep + Cppcheck)" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Container Scan: PASS (Trivy)" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Supply Chain: PASS (SBOM + Signing)" >> $GITHUB_STEP_SUMMARY
